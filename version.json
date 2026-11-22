@@ -1,0 +1,7 @@
+{
+  "upstream_repo": "https://github.com/FluidSynth/fluidsynth",
+  "upstream_ref": "v2.6.3",
+  "upstream_commit": "cd8b576ae6d33b805378356e5b33ec9f9c5b2e1b",
+  "gcem_commit": "012ae73c6d0a2cb09ffe86475f5c6fba3926e200",
+  "version": "v2.6.3-android1"
+}

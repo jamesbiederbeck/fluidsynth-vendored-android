@@ -1,0 +1,77 @@
+name: Build and release FluidSynth Android devkit
+
+on:
+  push:
+    branches: [main]
+    paths: ['version.json']
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: 29.0.13113456
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Read version
+        id: version
+        run: |
+          echo "version=$(jq -r .version version.json)" >> "$GITHUB_OUTPUT"
+          echo "upstream_ref=$(jq -r .upstream_ref version.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag does not exist
+        if: github.event_name != 'pull_request'
+        run: |
+          TAG="${{ steps.version.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists; bump version.json before releasing." >&2
+            exit 1
+          fi
+
+      - name: Install Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install pinned NDK
+        run: sdkmanager --install "ndk;${{ env.NDK_VERSION }}"
+
+      - name: Prepare verified upstream
+        run: bash ./scripts/prepare.sh
+
+      - name: Cross-compile, audit, and package devkit
+        run: bash ./scripts/build.sh
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.version }}
+          UPSTREAM: ${{ steps.version.outputs.upstream_ref }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="fluidsynth-${TAG}-android-aarch64-devkit.tar.gz"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" "$ARCHIVE" \
+            --title "$TAG" \
+            --notes "FluidSynth $UPSTREAM Android arm64-v8a/API24+ SF2 C API devkit (shared libraries + headers)."
